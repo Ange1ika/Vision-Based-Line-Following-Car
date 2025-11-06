@@ -19,14 +19,15 @@ Telemetry (speeds, states, and centroids) is logged in CSV format for further an
 ---
 
 ## 🗂 Project Structure
+```bash
 line_follower/
-├── line_detector.py # Line segmentation & ROI analysis
-├── angle_analyzer.py # Turn detection and confidence logic
-├── motor_controller.py # L298N GPIO-based motor control
-├── vision_controller.py # Core control loop, steering & telemetry
-├── telemetry_log.csv # Example recorded telemetry
+├── line_detector.py       # Line segmentation & ROI analysis
+├── angle_analyzer.py      # Turn detection and confidence logic
+├── motor_controller.py    # L298N GPIO-based motor control
+├── vision_controller.py   # Core control loop, steering & telemetry
+├── telemetry_log.csv      # Example recorded telemetry
 └── README.md
-
+```
 ---
 
 ## ⚙️ Requirements
