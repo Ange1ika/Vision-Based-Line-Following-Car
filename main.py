@@ -9,25 +9,48 @@ from controller import VisionController
 
 
 def main():
+    telemetry_path = "./telemetry"
+    os.makedirs(telemetry_path, exist_ok=True)
+    
     print("🚗 Запуск: Визуальная детекция + углы 90° + доворот")
     camera = MyPiCamera(320, 240)  # для RPi. На ПК можно MyPiCamera(..., fallback_webcam=True)
     motors = MotorController()
     ctrl = VisionController(camera, motors,
-                            base_speed=50,
-                            turn_speed=65,
-                            maneuver_timeout=1.5,
+                            base_speed=0,
+                            turn_speed=68,
+                            slowdown_factor=0.7,
+                            maneuver_timeout=0.2,
                             min_line_pixels=700)
-
     # видео запись (опционально)
-    save_dir = os.path.expanduser("/home/raspberry/Desktop/data_mining/line_follower/videos")
-    telemetry_path = os.path.expanduser("/home/raspberry/Desktop/data_mining/line_follower/telemetry")
+    save_dir = os.path.expanduser("./videos")
     os.makedirs(save_dir, exist_ok=True)
-    os.makedirs(telemetry_path, exist_ok=True)
+    
     path = os.path.join(save_dir, f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.avi")
-    writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*'XVID'), 25.0, (320, 240))
+    
+    frame = camera.read()
+    if frame is None:
+        print("⚠️ Не удалось получить кадр с камеры. Пропускаем VideoWriter.")
+        writer = None
+    else:
+        vis = ctrl.step(debug=True)
+        if vis is not None:
+            h, w = vis.shape[:2]
+            frame_size = (w, h)
+            print(f"[INFO] Видеоразмер по debug: {frame_size}")
 
-    cv2.namedWindow("Line Follower", cv2.WINDOW_NORMAL)
+            path = os.path.join(save_dir, f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.avi")
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            writer = cv2.VideoWriter(path, fourcc, 10.0, frame_size, True)
+            print(f"[INFO] 🎥 Запись видео → {path}")
+        else:
+            writer = None
 
+    if not writer.isOpened():
+        print("❌ Ошибка: VideoWriter не открылся. Проверь кодек или путь.")
+    else:
+        print(f"[INFO] 🎥 Запись видео → {path}")
+
+    ctrl.base_speed = 50
     try:
         print("✅ Готово. Нажми q для выхода.")
         while True:

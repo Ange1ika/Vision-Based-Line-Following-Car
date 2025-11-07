@@ -12,7 +12,7 @@ class LineDetector:
     """
     def __init__(self,
                  hsv_black_lower=(0, 0, 0),
-                 hsv_black_upper=(179, 240, 50),
+                 hsv_black_upper=(179, 255, 50),
                  min_contour_area=60):
         self.hsv_black_lower = np.array(hsv_black_lower, dtype=np.uint8)
         self.hsv_black_upper = np.array(hsv_black_upper, dtype=np.uint8)

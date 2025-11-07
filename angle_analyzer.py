@@ -1,4 +1,6 @@
 import time
+
+
 class AngleAnalyzer:
     """
     Выявляет острые/90° повороты:
@@ -76,7 +78,7 @@ class AngleAnalyzer:
         if l_ratio > 0.75 and r_ratio < 0.25:
             self.region_left_cnt += 1
             self.region_right_cnt = 0
-        elif r_ratio > 0.55 and l_ratio < 0.25:
+        elif r_ratio > 0.75 and l_ratio < 0.25:
             self.region_right_cnt += 1
             self.region_left_cnt = 0
         else:

@@ -1,9 +1,8 @@
-import os
+import time
 import csv
 import cv2
-import time
-import numpy as np 
-
+import os
+import numpy as np
 from line_detector import LineDetector
 from angle_analyzer import AngleAnalyzer
 
@@ -15,19 +14,21 @@ class VisionController:
     """
     def __init__(self, camera, motors,
                  base_speed=50, turn_speed=25,
-                 maneuver_timeout=2.5,
-                 min_line_pixels=100,
-                 telemetry_path="telemetry_log.csv"):
+                 slowdown_factor=0.5,
+                 maneuver_timeout=1.5,
+                 min_line_pixels=700,
+                 telemetry_path="./telemetry/telemetry_log.csv"):
         self.camera = camera
         self.motors = motors
 
         self.detector = LineDetector()
-        self.angles = AngleAnalyzer(turn_threshold_ratio=0.40,
-                                    confirm_frames=3,
+        self.angles = AngleAnalyzer(turn_threshold_ratio=0.35,  # ИЗМЕНЕНО: было 0.40
+                                    confirm_frames=2,            # ИЗМЕНЕНО: было 3
                                     region_confirm_frames=2)
 
         self.base_speed = base_speed
         self.turn_speed = turn_speed
+        self.slowdown_factor = slowdown_factor
         self.maneuver_timeout = maneuver_timeout
         self.min_line_pixels = min_line_pixels
 
@@ -36,11 +37,13 @@ class VisionController:
         self.maneuver_dir = 0
         self.maneuver_start = 0.0
         self.current_speed = base_speed
-        self.current_turn_factor = 1.2
+        self.current_turn_factor = 0.8
         self.debug_last_state = None
         
         self.prev_time = time.time()
         self.fps = 0.0
+                
+        self.raw_video_path = "./raw_videos/raw.avi"
 
         # --- Телеметрия ---
         self.telemetry_path = telemetry_path
@@ -56,16 +59,39 @@ class VisionController:
                 "left_speed", "right_speed",
                 "state", "maneuver_dir"
             ])
-                
+        
+        
+        ## два видео одновременно не пишем, тогда два видеокодека с разными разрешениями нужны 
         self.save_raw_video = True
         self.raw_video_writer = None
-            
+
         if self.save_raw_video:
-            os.makedirs(os.path.dirname(raw_video_path) or ".", exist_ok=True)
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            os.makedirs(os.path.dirname(self.raw_video_path) or ".", exist_ok=True)
+
+            # Попробуем несколько кодеков, чтобы не было ошибок FFmpeg
+            possible_codecs = [
+                ('MJPG', 'avi'),
+                ('mp4v', 'mp4'),
+                ('XVID', 'avi')
+            ]
+
+            frame_size = (int(camera.width), int(camera.height))
             fps = 20.0
-            frame_size = (camera.width, camera.height)
-            self.raw_video_writer = cv2.VideoWriter(raw_video_path, fourcc, fps, frame_size)
+            for fourcc_name, ext in possible_codecs:
+                path = os.path.splitext(self.raw_video_path)[0] + f".{ext}"
+                fourcc = cv2.VideoWriter_fourcc(*fourcc_name)
+                writer = cv2.VideoWriter(path, fourcc, fps, frame_size)
+
+                if writer.isOpened():
+                    print(f"[INFO] 🎥 Raw video recording enabled → {path} ({fourcc_name})")
+                    self.raw_video_writer = writer
+                    break
+                else:
+                    writer.release()
+
+            if self.raw_video_writer is None:
+                print("⚠️ Failed to initialize any codec! Raw video will not be saved.")
+
 
     # ------------------------------------------------------------
     def _log_telemetry(self, upper_x, lower_x):
@@ -88,7 +114,7 @@ class VisionController:
         if msg != self.debug_last_state:
             print(f"[DEBUG] {time.strftime('%H:%M:%S')} → {msg}")
             self.debug_last_state = msg
-        self.current_state = msg 
+        self.current_state = msg  # сохраняем состояние в лог
 
     # ------------------------------------------------------------
     def _start_maneuver(self, direction):
@@ -100,13 +126,16 @@ class VisionController:
         time.sleep(0.05)
         self.motors.move_forward(int(self.base_speed * 1.1), 0.15)
 
-    def _perform_maneuver(self, frame, mask):
+    def _perform_maneuver(self, frame, mask, lower_x):  # ИЗМЕНЕНО: добавлен lower_x
         self._debug_state(f"MANEUVER_TURN_{'LEFT' if self.maneuver_dir<0 else 'RIGHT'}")
         self.left_speed = self.turn_speed * self.maneuver_dir
         self.right_speed = -self.turn_speed * self.maneuver_dir
         self.motors.set_speed(self.left_speed, self.right_speed)
+        self.current_speed = self.base_speed * self.slowdown_factor
 
-        if cv2.countNonZero(mask) > self.min_line_pixels:
+        # ИЗМЕНЕНО: проверяем и количество пикселей, и наличие нижней линии
+        line_pixels = cv2.countNonZero(mask)
+        if line_pixels > self.min_line_pixels and lower_x is not None:
             self._debug_state("LINE_FOUND_EXIT_MANEUVER")
             self.maneuver_active = False
             self.motors.stop()
@@ -142,7 +171,7 @@ class VisionController:
         self.left_speed = speed + turn_adjustment
         self.right_speed = speed - turn_adjustment
 
-        max_speed = speed * 1.5
+        max_speed = speed * 1.3
         self.left_speed = max(min(self.left_speed, max_speed), -speed * 0.3)
         self.right_speed = max(min(self.right_speed, max_speed), -speed * 0.3)
         self.motors.set_speed(int(self.left_speed), int(self.right_speed))
@@ -155,17 +184,17 @@ class VisionController:
         
         if self.save_raw_video and self.raw_video_writer is not None:
             self.raw_video_writer.write(frame)
-
+            
         mask = self.detector.threshold(frame)
         upper_mask, lower_mask = self.detector.split_upper_lower(mask)
-        # upper_x = self.detector.largest_contour_center_x(upper_mask)
-        # lower_x = self.detector.largest_contour_center_x(lower_mask)
-        
-        # если маска сверху разрывается и нестабильная сегментация
+
         upper_x, upper_disp = self.detector.largest_contour_center_x(upper_mask)
         lower_x, lower_disp = self.detector.largest_contour_center_x(lower_mask)
-        # если верхняя линия слишком "разорвана" — игнорируем её
-        if upper_disp > 40:  # подбирается экспериментально
+        
+        # ИЗМЕНЕНО: сделал порог мягче и добавил логирование
+        if upper_disp > 60:  # было 40
+            if upper_x is not None and debug:
+                print(f"[WARN] Upper line dispersion too high: {upper_disp:.1f}")
             upper_x = None
 
         h, w = frame.shape[:2]
@@ -173,21 +202,29 @@ class VisionController:
         lower_counts = self.detector.roi_bins(lower_mask, bins=3)
 
         if self.maneuver_active:
-            self._perform_maneuver(frame, mask)
+            self._perform_maneuver(frame, mask, lower_x)  # ИЗМЕНЕНО: передаём lower_x
         else:
             corner_type, direction, conf = self.angles.decide(
                 upper_x=upper_x, width=w,
                 upper_counts=upper_counts, lower_counts=lower_counts
             )
 
-            if corner_type == 'right_angle' and conf >= 0.7:
+            # ИЗМЕНЕНО: понизил порог confidence и добавил логирование
+            if corner_type == 'right_angle' and conf >= 0.5:  # было 0.7
+                if debug:
+                    print(f"[TURN] Detected {direction} turn, conf={conf:.2f}")
                 self._start_maneuver(direction)
             else:
-                self._move_towards(lower_x, w)
+                # ИЗМЕНЕНО: проверяем наличие линии перед движением
+                if lower_x is not None or self.last_known_x is not None:
+                    self._move_towards(lower_x, w)
+                else:
+                    self._debug_state("NO_LINE_STOP")
+                    self.motors.stop()
 
         # записываем телеметрию каждый кадр
         self._log_telemetry(upper_x, lower_x)
-                
+        
         # === ⏱ FPS-счётчик ===
         current_time = time.time()
         dt = current_time - self.prev_time
@@ -221,9 +258,9 @@ class VisionController:
         cv2.putText(panel, f"{line_pixels}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         cv2.putText(panel, f"/{min_required}", (10, 55),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         cv2.putText(panel, "PIXELS", (10, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         cv2.putText(panel, f"FPS:{self.fps:.1f}", (10, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
@@ -244,4 +281,3 @@ class VisionController:
             self.raw_video_writer.release()
         self.camera.release()
         self.motors.stop()
-
