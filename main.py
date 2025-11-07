@@ -21,7 +21,7 @@ def main():
 
     # видео запись (опционально)
     save_dir = os.path.expanduser("/home/raspberry/Desktop/data_mining/line_follower/videos")
-    telemetry_peth = os.path.expanduser("/home/raspberry/Desktop/data_mining/line_follower/telemetry")
+    telemetry_path = os.path.expanduser("/home/raspberry/Desktop/data_mining/line_follower/telemetry")
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(telemetry_path, exist_ok=True)
     path = os.path.join(save_dir, f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.avi")

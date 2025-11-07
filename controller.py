@@ -1,6 +1,8 @@
+import numpy as np 
 import time
 import csv
 import cv2
+
 from line_detector import LineDetector
 from angle_analyzer import AngleAnalyzer
 
@@ -12,7 +14,6 @@ class VisionController:
     """
     def __init__(self, camera, motors,
                  base_speed=50, turn_speed=25,
-                 slowdown_factor=0.5,
                  maneuver_timeout=2.5,
                  min_line_pixels=100,
                  telemetry_path="telemetry_log.csv"):
@@ -26,7 +27,6 @@ class VisionController:
 
         self.base_speed = base_speed
         self.turn_speed = turn_speed
-        self.slowdown_factor = slowdown_factor
         self.maneuver_timeout = maneuver_timeout
         self.min_line_pixels = min_line_pixels
 
@@ -35,8 +35,11 @@ class VisionController:
         self.maneuver_dir = 0
         self.maneuver_start = 0.0
         self.current_speed = base_speed
-        self.current_turn_factor = 0.8
+        self.current_turn_factor = 1.2
         self.debug_last_state = None
+        
+        self.prev_time = time.time()
+        self.fps = 0.0
 
         # --- Телеметрия ---
         self.telemetry_path = telemetry_path
@@ -74,7 +77,7 @@ class VisionController:
         if msg != self.debug_last_state:
             print(f"[DEBUG] {time.strftime('%H:%M:%S')} → {msg}")
             self.debug_last_state = msg
-        self.current_state = msg  # сохраняем состояние в лог
+        self.current_state = msg 
 
     # ------------------------------------------------------------
     def _start_maneuver(self, direction):
@@ -128,7 +131,7 @@ class VisionController:
         self.left_speed = speed + turn_adjustment
         self.right_speed = speed - turn_adjustment
 
-        max_speed = speed * 1.3
+        max_speed = speed * 1.5
         self.left_speed = max(min(self.left_speed, max_speed), -speed * 0.3)
         self.right_speed = max(min(self.right_speed, max_speed), -speed * 0.3)
         self.motors.set_speed(int(self.left_speed), int(self.right_speed))
@@ -143,7 +146,8 @@ class VisionController:
         upper_mask, lower_mask = self.detector.split_upper_lower(mask)
         # upper_x = self.detector.largest_contour_center_x(upper_mask)
         # lower_x = self.detector.largest_contour_center_x(lower_mask)
-
+        
+        # если маска сверху разрывается и нестабильная сегментация
         upper_x, upper_disp = self.detector.largest_contour_center_x(upper_mask)
         lower_x, lower_disp = self.detector.largest_contour_center_x(lower_mask)
         # если верхняя линия слишком "разорвана" — игнорируем её
@@ -169,15 +173,54 @@ class VisionController:
 
         # записываем телеметрию каждый кадр
         self._log_telemetry(upper_x, lower_x)
+                
+        # === ⏱ FPS-счётчик ===
+        current_time = time.time()
+        dt = current_time - self.prev_time
+        if dt > 0:
+            instant_fps = 1.0 / dt
+            self.fps = 0.9 * self.fps + 0.1 * instant_fps
+        self.prev_time = current_time
 
         if not debug:
             return None
 
         vis = self.detector.visualize(frame, mask, upper_x, lower_x)
+
+        # === Панель детекции линии ===
+        h, w = vis.shape[:2]
+        panel_width = 120
+        line_pixels = cv2.countNonZero(mask)
+        min_required = 700
+
+        panel = np.zeros((h, panel_width, 3), dtype=np.uint8)
+
+        ratio = min(line_pixels / min_required, 1.0)
+        bar_height = int(h * ratio)
+
+        cv2.rectangle(panel,
+                      (20, h - bar_height),
+                      (80, h),
+                      (0, 255, 0) if line_pixels >= min_required else (0, 0, 255),
+                      -1)
+
+        cv2.putText(panel, f"{line_pixels}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(panel, f"/{min_required}", (10, 55),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        cv2.putText(panel, "PIXELS", (10, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        cv2.putText(panel, f"FPS:{self.fps:.1f}", (10, h - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+        vis = np.hstack([vis, panel])
+
         if self.maneuver_active:
             cv2.putText(vis, f"MANEUVER: {'LEFT' if self.maneuver_dir<0 else 'RIGHT'}",
                         (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
         else:
             cv2.putText(vis, f"U:{upper_x}  L:{lower_x}", (6, 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
+
         return vis
+
