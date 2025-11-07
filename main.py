@@ -15,7 +15,6 @@ def main():
     ctrl = VisionController(camera, motors,
                             base_speed=50,
                             turn_speed=65,
-                            slowdown_factor=0.6,
                             maneuver_timeout=1.5,
                             min_line_pixels=700)
 
@@ -48,6 +47,7 @@ def main():
         motors.cleanup()
         camera.release()
         writer.release()
+        ctrl.close()
         cv2.destroyAllWindows()
         print("✅ Завершено")
 

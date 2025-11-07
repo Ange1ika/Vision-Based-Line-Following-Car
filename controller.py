@@ -1,7 +1,8 @@
-import numpy as np 
-import time
+import os
 import csv
 import cv2
+import time
+import numpy as np 
 
 from line_detector import LineDetector
 from angle_analyzer import AngleAnalyzer
@@ -55,6 +56,16 @@ class VisionController:
                 "left_speed", "right_speed",
                 "state", "maneuver_dir"
             ])
+                
+        self.save_raw_video = True
+        self.raw_video_writer = None
+            
+        if self.save_raw_video:
+            os.makedirs(os.path.dirname(raw_video_path) or ".", exist_ok=True)
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            fps = 20.0
+            frame_size = (camera.width, camera.height)
+            self.raw_video_writer = cv2.VideoWriter(raw_video_path, fourcc, fps, frame_size)
 
     # ------------------------------------------------------------
     def _log_telemetry(self, upper_x, lower_x):
@@ -141,6 +152,9 @@ class VisionController:
         frame = self.camera.read()
         if frame is None:
             return None
+        
+        if self.save_raw_video and self.raw_video_writer is not None:
+            self.raw_video_writer.write(frame)
 
         mask = self.detector.threshold(frame)
         upper_mask, lower_mask = self.detector.split_upper_lower(mask)
@@ -223,4 +237,11 @@ class VisionController:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
 
         return vis
+
+    def close(self):
+        """Останавливает запись видео и освобождает ресурсы"""
+        if self.raw_video_writer is not None:
+            self.raw_video_writer.release()
+        self.camera.release()
+        self.motors.stop()
 
