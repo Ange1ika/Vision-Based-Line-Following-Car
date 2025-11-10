@@ -6,7 +6,7 @@ import numpy as np
 from line_detector import LineDetector
 from angle_analyzer import AngleAnalyzer
 from YoloLineDetector import YOLOLineDetector
-from YoloLineDetectorOpenVino import YOLOLineDetectorOpenVINO
+
 class VisionController:
     """
     Объединяет: детекцию, анализ углов, манёвры, адаптивное замедление,
@@ -14,15 +14,15 @@ class VisionController:
     """
     def __init__(self, camera, motors,
                  base_speed=50, turn_speed=25,
-                 slowdown_factor=0.5,
+                 slowdown_factor=0.8,
                  maneuver_timeout=0.2,
                  min_line_pixels=700,
                  telemetry_path="./telemetry/telemetry_log.csv",
                 # === Новые параметры для выбора детектора ===
                  use_yolo=False,
-                 yolo_model_path="checkpoints/yolov8n_seg_last/best_openvino_model/best.xmls",
+                 yolo_model_path="./checkpoints/yolov8n_seg_last/tflite_export/best_float32.tflite",
                  yolo_img_size=320,
-                 yolo_conf_thresh=0.01,
+                 yolo_conf_thresh=0.7,
                  yolo_iou_thresh=0.5):
         self.camera = camera
         self.motors = motors
@@ -31,13 +31,11 @@ class VisionController:
         self.use_yolo = use_yolo
         if use_yolo:
             print("Using YOLOv8-seg")
-
-            self.detector = YOLOLineDetectorOpenVINO(
-                ov_xml=yolo_model_path,
+            self.detector = YOLOLineDetector(
+                tflite_path=yolo_model_path,
                 img_size=yolo_img_size,
                 conf_thresh=yolo_conf_thresh,
-                iou_thresh=yolo_iou_thresh,
-                min_contour_area=60
+                iou_thresh=yolo_iou_thresh
             )
         else:
             print(" Using OpenCV HSV")
@@ -143,8 +141,8 @@ class VisionController:
         self.maneuver_active = True
         self.maneuver_dir = direction
         self.maneuver_start = time.time()
-        # self.motors.stop()
-        # time.sleep(0.05)
+        self.motors.stop()
+        time.sleep(0.001)
         self.motors.move_forward(int(self.base_speed * 1.1), 0.15)
 
     def _perform_maneuver(self, frame, mask, lower_x):  # ИЗМЕНЕНО: добавлен lower_x
@@ -174,7 +172,7 @@ class VisionController:
             if self.last_known_x is None:
                 self._debug_state("LINE_LOST_STOP")
                 self.left_speed = self.right_speed = 0
-                self.motors.stop()
+                #self.motors.stop()
                 return
             point_x = self.last_known_x
         else:
@@ -229,13 +227,11 @@ class VisionController:
                 upper_counts=upper_counts, lower_counts=lower_counts
             )
 
-            # ИЗМЕНЕНО: понизил порог confidence и добавил логирование
             if corner_type == 'right_angle' and conf >= 0.5:  # было 0.7
                 if debug:
                     print(f"[TURN] Detected {direction} turn, conf={conf:.2f}")
                 self._start_maneuver(direction)
             else:
-                # ИЗМЕНЕНО: проверяем наличие линии перед движением
                 if lower_x is not None or self.last_known_x is not None:
                     self._move_towards(lower_x, w)
                 else:

@@ -15,11 +15,20 @@ def main():
     print("🚗 Запуск: Визуальная детекция + углы 90° + доворот")
     camera = MyPiCamera(320, 240)
     motors = MotorController()
+    # ctrl = VisionController(
+    #     camera, motors,
+    #     base_speed=45,
+    #     turn_speed=68,
+    #     slowdown_factor=0.8,
+    #     maneuver_timeout=0.2,
+    #     min_line_pixels=700,
+    #     use_yolo=True
+    # )
     ctrl = VisionController(
         camera, motors,
-        base_speed=45,
-        turn_speed=68,
-        slowdown_factor=0.8,
+        base_speed=45,          # Начальная скорость
+        turn_speed=70,          # Скорость на повороте  
+        slowdown_factor=0.9,
         maneuver_timeout=0.2,
         min_line_pixels=700,
         use_yolo=True

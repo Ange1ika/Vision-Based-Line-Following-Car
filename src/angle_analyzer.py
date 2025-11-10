@@ -12,8 +12,8 @@ class AngleAnalyzer:
       confidence: 0..1
     """
     def __init__(self,
-                 turn_threshold_ratio=0.65,
-                 confirm_frames=3,
+                 turn_threshold_ratio=0.6,
+                 confirm_frames=2,
                  region_confirm_frames=4):
         self.turn_threshold_ratio = turn_threshold_ratio
         self.confirm_frames = confirm_frames

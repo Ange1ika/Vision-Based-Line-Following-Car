@@ -109,7 +109,7 @@ class MotorController:
         self.set_speed(speed, speed)
         self._log("forward", speed, speed)
         time.sleep(duration)
-        self.stop()
+        #self.stop()
 
     def cleanup(self):
         self.stop()
