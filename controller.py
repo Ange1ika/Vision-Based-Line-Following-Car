@@ -56,7 +56,7 @@ class VisionController:
         self.maneuver_dir = 0
         self.maneuver_start = 0.0
         self.current_speed = base_speed
-        self.current_turn_factor = 0.8
+        self.current_turn_factor = 0.9
         self.debug_last_state = None
         
         self.prev_time = time.time()
@@ -141,8 +141,8 @@ class VisionController:
         self.maneuver_active = True
         self.maneuver_dir = direction
         self.maneuver_start = time.time()
-        self.motors.stop()
-        time.sleep(0.05)
+        # self.motors.stop()
+        # time.sleep(0.05)
         self.motors.move_forward(int(self.base_speed * 1.1), 0.15)
 
     def _perform_maneuver(self, frame, mask, lower_x):  # ИЗМЕНЕНО: добавлен lower_x
@@ -152,20 +152,19 @@ class VisionController:
         self.motors.set_speed(self.left_speed, self.right_speed)
         self.current_speed = self.base_speed * self.slowdown_factor
 
-        # ИЗМЕНЕНО: проверяем и количество пикселей, и наличие нижней линии
         line_pixels = cv2.countNonZero(mask)
         if line_pixels > self.min_line_pixels and lower_x is not None:
             self._debug_state("LINE_FOUND_EXIT_MANEUVER")
             self.maneuver_active = False
             self.motors.stop()
-            time.sleep(0.05)
+            time.sleep(0.001)
             return
 
         if (time.time() - self.maneuver_start) > self.maneuver_timeout:
             self._debug_state("TIMEOUT_EXIT_MANEUVER")
             self.maneuver_active = False
             self.motors.stop()
-            time.sleep(0.05)
+            time.sleep(0.001)
 
     # ------------------------------------------------------------
     def _move_towards(self, point_x, img_width):
@@ -190,7 +189,7 @@ class VisionController:
         self.left_speed = speed + turn_adjustment
         self.right_speed = speed - turn_adjustment
 
-        max_speed = speed * 1.3
+        max_speed = speed * 1.8
         self.left_speed = max(min(self.left_speed, max_speed), -speed * 0.3)
         self.right_speed = max(min(self.right_speed, max_speed), -speed * 0.3)
         self.motors.set_speed(int(self.left_speed), int(self.right_speed))
