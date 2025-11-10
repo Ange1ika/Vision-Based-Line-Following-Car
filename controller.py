@@ -5,7 +5,7 @@ import os
 import numpy as np
 from line_detector import LineDetector
 from angle_analyzer import AngleAnalyzer
-
+from YoloLineDetector import YOLOLineDetector
 
 class VisionController:
     """
@@ -17,11 +17,30 @@ class VisionController:
                  slowdown_factor=0.5,
                  maneuver_timeout=1.5,
                  min_line_pixels=700,
-                 telemetry_path="./telemetry/telemetry_log.csv"):
+                 telemetry_path="./telemetry/telemetry_log.csv",
+                # === Новые параметры для выбора детектора ===
+                 use_yolo=False,
+                 yolo_model_path="checkpoints/best_fixed_float32.tflite",
+                 yolo_img_size=320,
+                 yolo_conf_thresh=0.7,
+                 yolo_iou_thresh=0.45):
         self.camera = camera
         self.motors = motors
 
-        self.detector = LineDetector()
+        # === Выбор детектора ===
+        self.use_yolo = use_yolo
+        if use_yolo:
+            print("Using YOLOv8-seg")
+            self.detector = YOLOLineDetector(
+                tflite_path=yolo_model_path,
+                img_size=yolo_img_size,
+                conf_thresh=yolo_conf_thresh,
+                iou_thresh=yolo_iou_thresh
+            )
+        else:
+            print(" Using OpenCV HSV")
+            self.detector = LineDetector()
+            
         self.angles = AngleAnalyzer(turn_threshold_ratio=0.35,  # ИЗМЕНЕНО: было 0.40
                                     confirm_frames=2,            # ИЗМЕНЕНО: было 3
                                     region_confirm_frames=2)
@@ -261,9 +280,15 @@ class VisionController:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         cv2.putText(panel, "PIXELS", (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                # Индикатор детектора
+        detector_text = "YOLO" if self.use_yolo else "OpenCV"
+        detector_color = (255, 150, 0) if self.use_yolo else (0, 200, 255)
+        cv2.putText(panel, detector_text, (10, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, detector_color, 2)
+             
         cv2.putText(panel, f"FPS:{self.fps:.1f}", (10, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-
+        
         vis = np.hstack([vis, panel])
 
         if self.maneuver_active:

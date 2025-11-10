@@ -12,16 +12,16 @@ def main():
     telemetry_path = "./telemetry"
     os.makedirs(telemetry_path, exist_ok=True)
     
-    print("🚗 Запуск: Визуальная детекция + углы 90° + доворот")
-    camera = MyPiCamera(320, 240)  # для RPi. На ПК можно MyPiCamera(..., fallback_webcam=True)
+    print("Запуск: Визуальная детекция + углы 90° + доворот")
+    camera = MyPiCamera(320, 240) 
     motors = MotorController()
     ctrl = VisionController(camera, motors,
                             base_speed=0,
                             turn_speed=68,
-                            slowdown_factor=0.7,
+                            slowdown_factor=0.8,
                             maneuver_timeout=0.2,
-                            min_line_pixels=700)
-    # видео запись (опционально)
+                            min_line_pixels=700,
+                            use_yolo=True)
     save_dir = os.path.expanduser("./videos")
     os.makedirs(save_dir, exist_ok=True)
     
@@ -29,7 +29,7 @@ def main():
     
     frame = camera.read()
     if frame is None:
-        print("⚠️ Не удалось получить кадр с камеры. Пропускаем VideoWriter.")
+        print("Не удалось получить кадр с камеры. Пропускаем VideoWriter.")
         writer = None
     else:
         vis = ctrl.step(debug=True)
