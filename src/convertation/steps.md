@@ -1,7 +1,6 @@
 https://discuss.roboflow.com/t/interpreting-yolov8-tflite-output/1562/4
 
 
-UPD:: YOU CAN USE JUST /home/angelika/Desktop/Seoul/Vision-Based-Line-Following-Car/src/convertation/yoloPth2Tflite.py !
 
 convert yolo.pth to onnx:
 
@@ -48,3 +47,12 @@ TypeError: Unable to convert function return value to a Python type! The signatu
         () -> handle
 
 pip install "numpy<1.24" --force-reinstall
+
+
+
+
+onnx2tf -i checkpoints/last_model/best.onnx -o tflite_export/ -ois 1,3,320,320 -prf checkpoints/last_model/parameter_replacement.json
+
+onnx2tf -i checkpoints/last_model/best.pt -b 1,3,320,320 -onwdt
+
+onnx2tf   -i "checkpoints/best_500ep.pt"   -o tflite_export/   -ois 1,3,320,320 -onwdt
