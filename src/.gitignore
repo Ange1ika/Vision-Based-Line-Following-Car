@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Output and videos
+videos/
+output/
+telemetry/
+
+# System / Editor
+.DS_Store
+.idea/
+.vscode/
