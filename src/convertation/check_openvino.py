@@ -3,9 +3,9 @@ import numpy as np
 import time
 from openvino import Core
 
-MODEL_PATH = "/home/angelika/Desktop/Seoul/Vision-Based-Line-Following-Car/checkpoints/yolov8s_seg/yolov8s_550ep_openvino_model/yolov8s_550ep.xml"
+MODEL_PATH = "checkpoints/yolov8n_seg_last/best_openvino_model/best.xml"
 TEST_IMAGE = "data/test_images/45.jpg"
-IMG_SIZE = 640
+IMG_SIZE = 320
 
 ie = Core()
 model = ie.read_model(MODEL_PATH)

@@ -6,7 +6,7 @@ import numpy as np
 from line_detector import LineDetector
 from angle_analyzer import AngleAnalyzer
 from YoloLineDetector import YOLOLineDetector
-
+from YoloLineDetectorOpenVino import YOLOLineDetectorOpenVINO
 class VisionController:
     """
     Объединяет: детекцию, анализ углов, манёвры, адаптивное замедление,
@@ -20,7 +20,7 @@ class VisionController:
                  telemetry_path="./telemetry/telemetry_log.csv",
                 # === Новые параметры для выбора детектора ===
                  use_yolo=False,
-                 yolo_model_path="checkpoints/best_fixed_float32.tflite",
+                 yolo_model_path="checkpoints/yolov8n_seg_last/best_openvino_model/best.xmls",
                  yolo_img_size=320,
                  yolo_conf_thresh=0.01,
                  yolo_iou_thresh=0.5):
@@ -31,11 +31,13 @@ class VisionController:
         self.use_yolo = use_yolo
         if use_yolo:
             print("Using YOLOv8-seg")
-            self.detector = YOLOLineDetector(
-                tflite_path=yolo_model_path,
+
+            self.detector = YOLOLineDetectorOpenVINO(
+                ov_xml=yolo_model_path,
                 img_size=yolo_img_size,
                 conf_thresh=yolo_conf_thresh,
-                iou_thresh=yolo_iou_thresh
+                iou_thresh=yolo_iou_thresh,
+                min_contour_area=60
             )
         else:
             print(" Using OpenCV HSV")

@@ -29,7 +29,7 @@ pip install onnx==1.14.1  #
 ```
 
  ```
-onnx2tf -i "/home/angelika/Desktop/Seoul/Intelligent Control/DATA_annotation/yolo_results/best.onnx" -o checkpoints/last_model/tflite_export/ -ois 1,3,320,320
+onnx2tf -i "checkpoints/yolov8n_seg_last/best.onnx" -o checkpoints/yolov8n_seg_last/tflite_export/ -ois 1,3,320,320
 ```
 
   ```

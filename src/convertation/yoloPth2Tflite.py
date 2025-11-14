@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-model = YOLO("/home/angelika/Desktop/Seoul/Intelligent Control/DATA_annotation/yolo_results/best.pt")
+model = YOLO("/home/angelika/Desktop/Seoul/Vision-Based-Line-Following-Car/checkpoints/yolov8n_seg_last/best.pt")
 """it is not so good way to convert yolo pth to tflite directly, better to convert pth to onnx first, then onnx to tflite
 see src/convertation"""
 
