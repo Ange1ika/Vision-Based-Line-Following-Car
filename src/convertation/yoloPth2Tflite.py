@@ -1,10 +1,11 @@
 from ultralytics import YOLO
 
-#model = YOLO("checkpoints/last_model/best.pt")
-model = YOLO("/home/angelika/Desktop/Seoul/Vision-Based-Line-Following-Car/checkpoints/best_500ep.pt")
-
+model = YOLO("/home/angelika/Desktop/Seoul/Intelligent Control/DATA_annotation/yolo_results/best.pt")
 """it is not so good way to convert yolo pth to tflite directly, better to convert pth to onnx first, then onnx to tflite
 see src/convertation"""
+
+model.export(format="onnx", imgsz=320) #imgsz important!
+
 # model.export(format='tflite',
 #              simplify=True, # Let YOLO do the simplification
 #              opset=11,
@@ -13,8 +14,16 @@ see src/convertation"""
 #              dynamic=False,
 #              agnostic_nms=False) # Static shapes
 
-model.export(format='onnx',
-simplify=True, # Let YOLO do the simplification
+#model.export(format='onnx', imgsz=320)
+#simplify=True, # Let YOLO do the simplification
 #nms=False,
-opset=11, # Use older opset
-dynamic=False) # Static shapes  
+#opset=11, # Use older opset
+#dynamic=False) # Static shapes  
+
+# model.export(
+#     format="onnx",
+#     opset=12,
+#     simplify=True,
+#     imgsz=320,
+#     dynamic=False,      # ОБЯЗАТЕЛЬНО отключить
+# )

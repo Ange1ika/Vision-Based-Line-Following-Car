@@ -29,7 +29,8 @@ pip install onnx==1.14.1  #
 ```
 
  ```
-onnx2tf -i "checkpoints/last_model/best.onnx" -o checkpoints/last_model/tflite_export/ -ois 1,3,320,320
+onnx2tf -i "/home/angelika/Desktop/Seoul/Intelligent Control/DATA_annotation/yolo_results/best.onnx" -o checkpoints/last_model/tflite_export/ -ois 1,3,320,320
+```
 
   ```
 saved_model output started ==========================================================
@@ -50,9 +51,29 @@ pip install "numpy<1.24" --force-reinstall
 
 
 
+optional:
 
+```
 onnx2tf -i checkpoints/last_model/best.onnx -o tflite_export/ -ois 1,3,320,320 -prf checkpoints/last_model/parameter_replacement.json
 
 onnx2tf -i checkpoints/last_model/best.pt -b 1,3,320,320 -onwdt
 
 onnx2tf   -i "checkpoints/best_500ep.pt"   -o tflite_export/   -ois 1,3,320,320 -onwdt
+
+
+onnx2tf \
+    -i "/home/angelika/Desktop/Seoul/Intelligent Control/DATA_annotation/best500ep.onnx" \
+    -o tflite_export/ \
+    -ois 1,3,320,320 \
+    -onwdt \
+    -dgc \
+    --no-optimize
+
+
+onnx2tf \
+  -i checkpoints/last_model/best500ep_sim.onnx \
+  -o tflite_export \
+  -ois 1,3,320,320 \
+  -onwdt \
+  -dgc
+  ```

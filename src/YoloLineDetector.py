@@ -9,7 +9,7 @@ class YOLOLineDetector:
     Совместим с интерфейсом LineDetector.
     """
     def __init__(self, 
-                 tflite_path="checkpoints/best_fixed_float32.tflite",
+                 tflite_path="/home/angelika/Desktop/Seoul/Vision-Based-Line-Following-Car/checkpoints/last_model/tflite_export/best500ep_float16.tflite",
                  img_size=320,
                  conf_thresh=0.7,
                  iou_thresh=0.45,

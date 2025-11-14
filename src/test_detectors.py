@@ -66,7 +66,7 @@ def benchmark_detectors(img_path, opencv_detector, yolo_detector, show_steps=Fal
     print(f"{'='*60}")
 
     vis_cv, fps_cv, t_cv = test_single_image(img_path, opencv_detector, "OpenCV HSV", show_steps)
-    vis_yolo, fps_yolo, t_yolo = test_single_image(img_path, yolo_detector, "YOLOv8-seg", show_steps)
+    vis_yolo, fps_yolo, t_yolo = test_single_image(img_path, yolo_detector, "TFLite", show_steps)
     
     if vis_cv is None or vis_yolo is None:
         print(" Ошибка при визуализации. Пропуск.")
@@ -89,10 +89,10 @@ def main():
     parser = argparse.ArgumentParser(description="Тестирование YOLO и OpenCV детекторов")
     parser.add_argument('--image', type=str, default= BASE_DIR / "data/test_images",
                         help='Путь к изображению или папке')
-    parser.add_argument('--model', type=str, default= "/home/angelika/Desktop/Seoul/Vision-Based-Line-Following-Car/checkpoints/old_model/best_fixed_float16.tflite", 
+    parser.add_argument('--model', type=str, default= "/home/angelika/Desktop/Seoul/Vision-Based-Line-Following-Car/checkpoints/last_model/tflite_export/best_float16.tflite", 
     help='Путь к TFLite модели YOLO')
     parser.add_argument('--size', type=int, default=320, help='Размер входа YOLO')
-    parser.add_argument('--conf', type=float, default=0.01, help='Порог уверенности YOLO')
+    parser.add_argument('--conf', type=float, default=0.5, help='Порог уверенности YOLO')
     parser.add_argument('--benchmark', action='store_true',
                         help='Сравнить производительность OpenCV vs YOLO')
     parser.add_argument('--steps', action='store_true',
@@ -115,9 +115,9 @@ def main():
         if args.benchmark:
             benchmark_detectors(str(img), detectors['opencv'], detectors['yolo'], show_steps=args.steps)
         else:
-            vis, fps, t = test_single_image(str(img), detectors['yolo'], "YOLOv8-seg", show_steps=args.steps)
+            vis, fps, t = test_single_image(str(img), detectors['yolo'], "TFLite", show_steps=args.steps)
             if vis is not None:
-                cv2.imshow(f"{img.name} - YOLOv8", vis)
+                cv2.imshow(f"{img.name} - TFLite", vis)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
