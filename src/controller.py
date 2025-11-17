@@ -11,12 +11,12 @@ from line_detector import LineDetector
 
 class VisionController:
     """
-    Гибридная версия с исправленной логикой:
-    - Исправлен race condition в маневрах
-    - Нет потери кадров при выходе из маневра
-    - Унифицированы расчеты координат
-    - История направления обновляется всегда
-    - Cooldown применяется везде
+    Hybrid version with corrected logic:
+    - Fixed race condition in maneuvers
+    - No frame loss after maneuver exit
+    - Unified coordinate calculations
+    - Direction history always updates
+    - Cooldown applied everywhere
     """
 
     def __init__(self, camera, motors,
@@ -33,30 +33,30 @@ class VisionController:
         self.camera = camera
         self.motors = motors
 
-        # скорости
+        # speeds
         self.base_speed = base_speed
         self.turn_speed = turn_speed
         self.min_line_pixels = min_line_pixels
 
-        # PID коэффициенты
+        # PID coefficients
         self.Kp = 0.35
         self.Ki = 0.002
         self.Kd = 0.12
         self.K_angle = 0.0
         
-         # === Потеря линии / скелета (анти-дергание) ===
+        # === Line / skeleton loss (anti-shaking) ===
         self.no_line_frames = 0
-        self.no_line_max = 3        # потеря линии только после 3 кадров подряд
+        self.no_line_max = 5        # treat as lost only after 3 consecutive frames
 
         self.no_skeleton_frames = 0
-        self.no_skeleton_max = 3     # аналогично для скелета
+        self.no_skeleton_max = 5     # same for skeleton
         
         self.prev_error = 0
         self.integral = 0
         self.integral_limit = 10.0
         self.prev_time = time.time()
 
-        # детектор
+        # detector
         if use_yolo:
             self.detector = YOLOLineDetector(
                 tflite_path=yolo_model_path,
@@ -68,26 +68,26 @@ class VisionController:
         else:
             self.detector = LineDetector()
 
-        # анализатор углов
+        # angle analyzer
         self.angle = AngleAnalyzer(min_points=30, cooldown=0.2)
 
-        # === МАНЕВРЫ ===
+        # === MANEUVERS ===
         self.maneuver_active = False
         self.maneuver_dir = 0
         self.maneuver_start = 0.0
         self.maneuver_timeout = maneuver_timeout
-        self.maneuver_cooldown = 0.01  # секунды после маневра
+        self.maneuver_cooldown = 0.1  # seconds after maneuver
         self.last_maneuver_time = 0.0
-        self.min_turn_confidence = 0.5
+        self.min_turn_confidence = 0.6
 
-        # === История направления ===
+        # === Direction history ===
         self.dir_history = []
         self.dir_hist_size = 10
 
-        # === Константы для координат ===
-        self.BOTTOM_ROW_OFFSET = 70 
+        # === Coordinate constants ===
+        self.BOTTOM_ROW_OFFSET = 10 
 
-        # телеметрия
+        # telemetry
         self.telemetry_path = telemetry_path
         os.makedirs(os.path.dirname(telemetry_path) or ".", exist_ok=True)
         with open(self.telemetry_path, "w", newline="") as f:
@@ -95,25 +95,25 @@ class VisionController:
             writer.writerow(["time", "mode", "x_bottom", "left", "right", "error", "angle"])
 
     def _update_dir_history(self, direction):
-        """direction: -1 / 0 / +1 — тренд линии"""
+        """direction: -1 / 0 / +1 — line trend"""
         self.dir_history.append(direction)
         if len(self.dir_history) > self.dir_hist_size:
             self.dir_history.pop(0)
 
     def _get_history_direction(self):
-        """Возвращает среднее направление: -1..1"""
+        """Returns average direction: -1..1"""
         if not self.dir_history:
             return 0
         return sum(self.dir_history) / len(self.dir_history)
 
     def _calculate_x_bottom(self, skeleton, h, w):
         """
-        ЕДИНЫЙ метод расчета нижней точки линии через fitLine.
-        Возвращает (x_bottom, angle_deg) или (None, 0)
+        Unified method for calculating bottom line point using fitLine.
+        Returns (x_bottom, angle_deg) or (None, 0)
         """
         ys, xs = np.where(skeleton > 0)
         
-        # Берём только нижнюю часть скелета
+        # take only the lower part of the skeleton
         idx = ys > h * 0.2
         xs = xs[idx]
         ys = ys[idx]
@@ -124,13 +124,13 @@ class VisionController:
         pts = np.column_stack((xs, ys))
         vx, vy, x0, y0 = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
         
-        # Расчет угла наклона линии
+        # slope angle
         angle_deg = math.degrees(math.atan2(float(vy), float(vx)))
         
         if abs(vy) < 1e-6:
             x_bottom = float(x0)
         else:
-            # ЕДИНОЕ значение для нижней строки
+            # single value for the bottom row
             bottom_y = h - self.BOTTOM_ROW_OFFSET
             t = (bottom_y - y0) / vy
             t = max(min(t, 1e6), -1e6)
@@ -186,18 +186,17 @@ class VisionController:
         self.motors.set_speed(int(L), int(R))
 
     def _reset_pid(self):
-        """Сброс PID-регулятора для чистого перехода"""
+        """Reset PID controller before transition"""
         self.integral = 0
         self.prev_error = 0
         self.prev_time = time.time()
 
-    # МАНЕВРЫ -----------------------------------------------------
+    # MANEUVERS -----------------------------------------------------
     def _start_maneuver(self, direction):
-        """Начало маневра: едем вперед перед поворотом"""
+        """Start maneuver: drive forward before turning"""
         self.maneuver_active = True
         self.maneuver_dir = direction
         self.maneuver_start = time.time()
-        # Проезжаем вперед
         self.motors.move_forward(int(self.base_speed * 1.2), 0.24)
     
     def _perform_maneuver(self, mask, skeleton, h, w):
@@ -216,7 +215,7 @@ class VisionController:
             self._reset_pid()
             return True
         
-        # === Таймаут — запасной вариант ===
+        # === Timeout — fallback ===
         if (time.time() - self.maneuver_start) > self.maneuver_timeout:
             print("[MANEUVER] Timeout, exiting maneuver")
             self.maneuver_active = False
@@ -225,10 +224,9 @@ class VisionController:
             return True
 
         return False
-
-
+    
     def _is_cooldown_active(self):
-        """Проверка активности cooldown"""
+        """Check if cooldown is active"""
         return (time.time() - self.last_maneuver_time) < self.maneuver_cooldown
 
     # STEP -----------------------------------------------------
@@ -241,14 +239,14 @@ class VisionController:
         h, w = mask.shape
         skeleton = cv2.ximgproc.thinning(mask)
 
-        # === ЕСЛИ В МАНЕВРЕ ===
+        # === IF IN MANEUVER ===
         if self.maneuver_active:
             self._print_action(f"MANEUVER_{'LEFT' if self.maneuver_dir > 0 else 'RIGHT'}")
             
             x_bottom, _ = self._calculate_x_bottom(skeleton, h, w)
             maneuver_finished = self._perform_maneuver(mask, skeleton, h, w)
             
-            # Если маневр ЕЩЕ активен - возвращаем визуализацию и выходим
+            # If still in maneuver — return visualization
             if not maneuver_finished:
                 mode = f"MANEUVER_{'LEFT' if self.maneuver_dir > 0 else 'RIGHT'}"
                 self._log(mode, x_bottom)
@@ -256,12 +254,10 @@ class VisionController:
                     angle_info = ("maneuver", self.maneuver_dir, 1.0, 0)
                     return self._visualize(frame, mask, skeleton, x_bottom, mode, angle_info)
                 return None
-            
-            # Маневр завершен - ПРОДОЛЖАЕМ обработку текущего кадра (не return!)
+            # Maneuver finished — continue processing
             print("[MANEUVER] Continuing to PID with current frame")
 
-        # === ЛИНИЯ ПОТЕРЯНА ===
-                # === ЛИНИЯ / ПИКСЕЛИ ===
+        # === LINE LOST ===
         line_pixels = cv2.countNonZero(mask)
 
         if line_pixels < self.min_line_pixels:
@@ -269,54 +265,64 @@ class VisionController:
         else:
             self.no_line_frames = 0
 
+        # react only if line is gone for several frames in a row
         if self.no_line_frames >= self.no_line_max:
+            # get averaged direction
             avg_dir = self._get_history_direction()
 
-            # ❗ SEARCH НЕ ДОЛЖЕН БЛОКИРОВАТЬСЯ cooldown-ом
-            # (cooldown только для манёвров, а не поиска)
-            
-            if avg_dir > 0.2:
-                # Линия была слева → ищем влево
-                self.left_speed = -self.turn_speed * 0.9
-                self.right_speed = self.turn_speed * 0.9
+            # check cooldown
+            if self._is_cooldown_active():
+                self.motors.stop()
+                mode = "NO_LINE_COOLDOWN"
+                self._print_action(mode)
+                self._log(mode, None)
+                if debug:
+                    return self._visualize(frame, mask, skeleton, None, mode, ("straight", 0, 0, 0))
+                return None
+
+            if avg_dir > 0.1:
+                # line was on the left → search left
+                self.left_speed = -self.turn_speed
+                self.right_speed = self.turn_speed
                 self.motors.set_speed(self.left_speed, self.right_speed)
                 mode = "SEARCH_LEFT"
+                self._update_dir_history(-1)
 
-            elif avg_dir < -0.2:
-                # Линия была справа → ищем вправо
-                self.left_speed = self.turn_speed * 0.9
-                self.right_speed = -self.turn_speed * 0.9
+            elif avg_dir < -0.1:
+                # line was on the right → search right
+                self.left_speed = self.turn_speed
+                self.right_speed = -self.turn_speed
                 self.motors.set_speed(self.left_speed, self.right_speed)
                 mode = "SEARCH_RIGHT"
+                self._update_dir_history(1)
 
             else:
-                self.motors.set_speed(-self.turn_speed, self.turn_speed)
-                mode = "SEARCH_NEUTRAL"
+                # neutral history → stop
+                self.motors.stop()
+                mode = "NO_LINE"
+                self._update_dir_history(0)
 
             self._print_action(mode)
             self._log(mode, None)
+
             if debug:
-                return self._visualize(frame, mask, skeleton, None, mode, ("search", 0, 0, 0))
+                return self._visualize(frame, mask, skeleton, None, mode, ("straight", 0, 0, 0))
             return None
 
-        # если no_line_frames < no_line_max → просто продолжаем обычную логику:
-        # анализ углов, PID и т.д.
+        # if no_line_frames < threshold → continue normal processing
 
-        # === АНАЛИЗ УГЛОВ ===
+        # === ANGLE ANALYSIS ===
         corner_type, direction, conf, angle_deg = self.angle.analyze(skeleton)
         angle_info = (corner_type, direction, conf, angle_deg)
 
-        # Детекция резких углов с ВСЕМИ проверками
+        # turn detection with all checks
         if corner_type in ["right_turn", "left_turn"]:
             if conf < self.min_turn_confidence:
-                # Недостаточная уверенность
                 pass
             elif self._is_cooldown_active():
-                # Cooldown активен
                 time_since = time.time() - self.last_maneuver_time
                 print(f"[ANGLE] {corner_type} detected but cooldown active ({time_since:.2f}s)")
             else:
-                # ВСЕ УСЛОВИЯ ВЫПОЛНЕНЫ - запускаем маневр!
                 print(f"[ANGLE] Detected {corner_type}, conf={conf:.2f}, starting maneuver")
                 self._start_maneuver(direction)
                 mode = f"START_MANEUVER_{corner_type.upper()}"
@@ -325,7 +331,7 @@ class VisionController:
                     return self._visualize(frame, mask, skeleton, None, mode, angle_info)
                 return None
 
-        # === PID СЛЕДОВАНИЕ ===
+        # === PID FOLLOWING ===
         x_bottom, line_angle = self._calculate_x_bottom(skeleton, h, w)
 
         if x_bottom is None:
@@ -334,7 +340,7 @@ class VisionController:
             self.no_skeleton_frames = 0
 
         if x_bottom is None and self.no_skeleton_frames >= self.no_skeleton_max:
-            # Только если скелета нет уже несколько кадров подряд — стоп и поиск
+            # only if skeleton gone for several frames — stop and search
             self.motors.stop()
             mode = "NO_SKELETON"
             self._log(mode, None)
@@ -343,7 +349,7 @@ class VisionController:
                 return self._visualize(frame, mask, skeleton, None, mode, angle_info)
             return None
         elif x_bottom is None:
-            # короткий провал скелета — просто пропускаем кадр, не тормозим
+            # short skeleton drop — skip frame without braking
             mode = "NO_SKELETON_WAIT"
             self._print_action(mode)
             self._log(mode, None)
@@ -351,12 +357,12 @@ class VisionController:
                 return self._visualize(frame, mask, skeleton, None, mode, angle_info)
             return None
 
-        # Обновляем историю направления
+        # update history
         center = w / 2
         direction_sign = np.sign(x_bottom - center)
         self._update_dir_history(direction_sign)
 
-        # Вычисляем ошибку для логирования
+        # compute error for logs
         error = (x_bottom - center) / center + self.K_angle * (angle_deg / 90.0)
         
         self._print_action("PID")
@@ -375,20 +381,20 @@ class VisionController:
         self.motors.stop()
 
     def _visualize(self, frame, mask, skeleton, x_bottom, mode, angle_info):
-        """Визуализатор"""
+        """Visualizer"""
         vis = frame.copy()
         h, w = frame.shape[:2]
 
-        # Маска
+        # Mask
         color_mask = cv2.applyColorMap(mask, cv2.COLORMAP_TURBO)
         vis = cv2.addWeighted(vis, 0.65, color_mask, 0.35, 0)
 
-        # Скелет
+        # Skeleton
         skel_show = cv2.cvtColor(skeleton, cv2.COLOR_GRAY2BGR)
         skel_show[skeleton > 0] = (0, 0, 255)
         vis = cv2.addWeighted(vis, 0.9, skel_show, 0.5, 0)
 
-        # Линия fitLine
+        # fitLine
         ys, xs = np.where(skeleton > 0)
         idx = ys > h * 0.4
         xs = xs[idx]
@@ -415,12 +421,12 @@ class VisionController:
             if x_bottom is not None:
                 cv2.circle(vis, (int(x_bottom), h - 1), 6, (0, 255, 0), -1)
 
-        # Текстовая панель
+        # Text panel
         corner_type, direction, conf, angle_deg = angle_info
         L = int(getattr(self, "left_speed", 0))
         R = int(getattr(self, "right_speed", 0))
 
-        # Cooldown статус
+        # Cooldown status
         cooldown_active = self._is_cooldown_active()
         if cooldown_active:
             time_remaining = self.maneuver_cooldown - (time.time() - self.last_maneuver_time)
@@ -428,7 +434,7 @@ class VisionController:
         else:
             cooldown_text = "READY"
 
-        # История направления
+        # Direction history
         avg_dir = self._get_history_direction()
         hist_text = "L" if avg_dir > 0.2 else ("R" if avg_dir < -0.2 else "C")
 

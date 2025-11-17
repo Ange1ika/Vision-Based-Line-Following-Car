@@ -6,16 +6,16 @@ import cv2
 class AngleAnalyzer:
     """
     - angle_deg: +90..0..−90
-    - deviation = | angle |  
-          0° → максимальное отклонение (угол)
-         90° → строго вертикально (straight)
+    - deviation = |angle|
+          0°  → maximal deviation from vertical (horizontal line)
+         90° → strictly vertical (straight line)
     - confidence = deviation / 90
-          conf=0  → строго прямо
-          conf=1  → сильный угол
+          conf=0  → perfectly straight
+          conf=1  → strong angle
     - right_turn  → angle < 0
     - left_turn   → angle > 0
     """
-
+    
     def __init__(self, min_points=30, cooldown=0.2):
         self.min_points = min_points
         self.cooldown = cooldown
@@ -32,22 +32,22 @@ class AngleAnalyzer:
         pts = np.column_stack((xs, ys))
         [vx, vy, x0, y0] = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
 
-        # ---- Угол ----
+        # ---- Angle from fitLine ----
         theta = math.degrees(math.atan2(vy, vx)) 
-        # вертикаль = ±90°
-        angle_deg = theta  # мы уже видели, что fitLine даёт такие значения
+        # vertical = ±90°
+        angle_deg = theta  # fitLine already provides this form
 
-        # направление
+        # direction sign
         direction = 1 if angle_deg > 0 else -1 if angle_deg < 0 else 0
 
-        # отклонение от вертикали
-        deviation = abs(angle_deg) # 0..90
+        # deviation from vertical (0..90)
+        deviation = abs(angle_deg)
 
-        # conf=1 → сильный угол (deviation=90)
-        confidence = abs(deviation-90) / 90.0
+        # conf=1 → strong angle (deviation=90)
+        confidence = abs(deviation - 90) / 90.0
 
-        # ---- детекция угла ----
-        if 4 <= deviation <= 55 and self.can_trigger():
+        # ---- turn detection ----
+        if 4 <= deviation <= 60 and self.can_trigger():
             self.last_time = time.time()
             if direction < 0:
                 return ('right_turn', -1, confidence, angle_deg)
