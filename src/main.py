@@ -26,10 +26,9 @@ def main():
     # )
     ctrl = VisionController(
         camera, motors,
-        base_speed=45,          # Начальная скорость
-        turn_speed=70,          # Скорость на повороте  
-        slowdown_factor=0.9,
-        maneuver_timeout=0.2,
+        base_speed=50,          # Базовая скорость движения
+        turn_speed=70,          # Скорость поворота на месте
+        maneuver_timeout=2,   # Таймаут маневра
         min_line_pixels=700,
         use_yolo=True
     )

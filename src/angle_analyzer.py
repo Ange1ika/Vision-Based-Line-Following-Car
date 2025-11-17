@@ -44,10 +44,10 @@ class AngleAnalyzer:
         deviation = abs(angle_deg) # 0..90
 
         # conf=1 → сильный угол (deviation=90)
-        confidence = deviation / 90.0
+        confidence = abs(deviation-90) / 90.0
 
         # ---- детекция угла ----
-        if 4 <= deviation <= 80 and self.can_trigger():
+        if 4 <= deviation <= 55 and self.can_trigger():
             self.last_time = time.time()
             if direction < 0:
                 return ('right_turn', +1, confidence, angle_deg)
