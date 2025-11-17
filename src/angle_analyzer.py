@@ -16,7 +16,7 @@ class AngleAnalyzer:
     - left_turn   → angle > 0
     """
 
-    def __init__(self, min_points=30, cooldown=0.25):
+    def __init__(self, min_points=30, cooldown=0.2):
         self.min_points = min_points
         self.cooldown = cooldown
         self.last_time = 0.0
@@ -47,7 +47,7 @@ class AngleAnalyzer:
         confidence = deviation / 90.0
 
         # ---- детекция угла ----
-        if 50 <= deviation <= 70 and self.can_trigger():
+        if 4 <= deviation <= 80 and self.can_trigger():
             self.last_time = time.time()
             if direction < 0:
                 return ('right_turn', +1, confidence, angle_deg)
