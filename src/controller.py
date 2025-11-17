@@ -20,7 +20,7 @@ class VisionController:
 
     def __init__(self, camera, motors,
                  base_speed=50, turn_speed=25,
-                 slowdown_factor=0.5, maneuver_timeout=0.25,
+                 maneuver_timeout=0.2,
                  min_line_pixels=700,
                  telemetry_path="./telemetry/telemetry_log.csv",
                  use_yolo=True,
@@ -38,10 +38,10 @@ class VisionController:
         self.min_line_pixels = min_line_pixels
 
         # PID
-        self.Kp = 0.55
-        self.Ki = 0.015
+        self.Kp = 0.6
+        self.Ki = 0.0
         self.Kd = 0.1
-        self.K_angle = 0.35        # <<< важный новый параметр
+        self.K_angle = 0.0      
         self.prev_error = 0
         self.integral = 0
         self.prev_time = time.time()
@@ -100,8 +100,8 @@ class VisionController:
 
         u = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
 
-        L = self.base_speed + self.base_speed * u
-        R = self.base_speed - self.base_speed * u
+        L = self.base_speed - self.base_speed * u
+        R = self.base_speed + self.base_speed * u
 
         max_speed = self.base_speed * 1.8
         L = max(min(L, max_speed), -self.base_speed * 0.3)
@@ -129,38 +129,132 @@ class VisionController:
 
         mask = self.detector.threshold(frame)
 
+        # линия потеряна
         if cv2.countNonZero(mask) < self.min_line_pixels:
             self.motors.stop()
-            self._log("NO_LINE", None)
+            mode = "NO_LINE"
+            self._log(mode, None)
+            if debug:
+                return self._visualize(frame, mask, np.zeros_like(mask), None, mode, ("straight",0,0,0))
             return None
 
         skeleton = cv2.ximgproc.thinning(mask)
         h, w = skeleton.shape
 
-        # анализ угла
+        # === УГЛЫ ===
         corner_type, direction, conf, angle_deg = self.angle.analyze(skeleton)
+        angle_info = (corner_type, direction, conf, angle_deg)
 
-        # резкий поворот
+        # Резкие углы
         if corner_type == "right_turn":
             self._turn_right()
-            self._log("ANGLE_RIGHT", None)
-            return
+            mode = "TURN_RIGHT"
+            self._log(mode, None)
+            if debug:
+                return self._visualize(frame, mask, skeleton, None, mode, angle_info)
+            return None
 
         if corner_type == "left_turn":
             self._turn_left()
-            self._log("ANGLE_LEFT", None)
-            return
+            mode = "TURN_LEFT"
+            self._log(mode, None)
+            if debug:
+                return self._visualize(frame, mask, skeleton, None, mode, angle_info)
+            return None
 
-        # PID
+        # === PID ===
         ys, xs = np.where(skeleton > 0)
         pts = np.column_stack((xs, ys))
         [vx, vy, x0, y0] = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
+        # --- защита от почти вертикальной линии ---
+        if abs(vy) < 1e-6:
+            x_bottom = float(x0)
+        else:
+            t = (h - y0) / vy
+            # защита от выходов в ±inf
+            t = max(min(t, 1e6), -1e6)
+            x_bottom = float(x0 + vx * t)
 
-        x_bottom = x0 + vx * ((h - y0) / vy) if abs(vy) > 1e-5 else x0
 
         self._pid_follow(x_bottom, angle_deg, w)
-        self._log("PID", x_bottom)
+        mode = "PID"
+
+        self._log(mode, x_bottom)
+
+        if debug:
+            return self._visualize(frame, mask, skeleton, x_bottom, mode, angle_info)
+
+        return None
 
     def close(self):
         self.camera.release()
         self.motors.stop()
+
+    
+    def _visualize(self, frame, mask, skeleton, x_bottom, mode, angle_info):
+        """
+        Красивый визуализатор:
+        - цветная маска
+        - красный скелет
+        - жёлтая линия fitLine
+        - точка PID
+        - многострочная инфопанель
+        """
+        vis = frame.copy()
+        h, w = frame.shape[:2]
+
+        # === Маска поверх изображения ===
+        color_mask = cv2.applyColorMap(mask, cv2.COLORMAP_TURBO)
+        vis = cv2.addWeighted(vis, 0.65, color_mask, 0.35, 0)
+
+        # === Скелет красным ===
+        skel_show = cv2.cvtColor(skeleton, cv2.COLOR_GRAY2BGR)
+        skel_show[skeleton > 0] = (0, 0, 255)
+        vis = cv2.addWeighted(vis, 0.9, skel_show, 0.5, 0)
+
+        # === Линия fitLine ===
+        ys, xs = np.where(skeleton > 0)
+        if len(xs) > 20:
+            pts = np.column_stack((xs, ys))
+            [vx, vy, x0, y0] = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
+
+            # --- защита от вертикальной линии ---
+            if abs(vy) < 1e-6:
+                # линия почти горизонтальная → рисуем горизонтальную
+                x_top = int(x0)
+                x_bot = int(x0)
+            else:
+                # обычный случай
+                t_top = -y0 / vy
+                t_bot = (h - y0) / vy
+
+                # защита от inf
+                t_top = max(min(t_top, 1e6), -1e6)
+                t_bot = max(min(t_bot, 1e6), -1e6)
+
+                x_top = int(x0 + vx * t_top)
+                x_bot = int(x0 + vx * t_bot)
+
+            cv2.line(vis, (x_top, 0), (x_bot, h), (0, 255, 255), 2)
+
+
+            # PID точка
+            if x_bottom is not None:
+                cv2.circle(vis, (int(x_bottom), h - 1), 6, (0, 255, 0), -1)
+
+        # === Текстовая панель ===
+        corner_type, direction, conf, angle_deg = angle_info
+
+        lines = [
+            f"MODE: {mode}",
+            f"ANGLE: {angle_deg:.1f} deg",
+            f"DIR: {'LEFT' if direction>0 else 'RIGHT' if direction<0 else 'STRAIGHT'}",
+            f"CONF: {conf:.2f}",
+        ]
+
+        y0 = 20
+        for i, txt in enumerate(lines):
+            cv2.putText(vis, txt, (10, y0 + i * 22),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+        return vis

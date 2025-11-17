@@ -33,8 +33,7 @@ class AngleAnalyzer:
         [vx, vy, x0, y0] = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
 
         # ---- Угол ----
-        theta = math.degrees(math.atan2(vy, vx))   # -180..180
-
+        theta = math.degrees(math.atan2(vy, vx)) 
         # вертикаль = ±90°
         angle_deg = theta  # мы уже видели, что fitLine даёт такие значения
 
@@ -42,17 +41,17 @@ class AngleAnalyzer:
         direction = 1 if angle_deg > 0 else -1 if angle_deg < 0 else 0
 
         # отклонение от вертикали
-        deviation = abs(abs(angle_deg) - 90)     # 0..90
+        deviation = abs(angle_deg) # 0..90
 
         # conf=1 → сильный угол (deviation=90)
         confidence = deviation / 90.0
 
         # ---- детекция угла ----
-        if 30 <= deviation <= 70 and self.can_trigger():
+        if 50 <= deviation <= 70 and self.can_trigger():
             self.last_time = time.time()
             if direction < 0:
-                return ('right_turn', -1, confidence, angle_deg)
+                return ('right_turn', +1, confidence, angle_deg)
             else:
-                return ('left_turn', +1, confidence, angle_deg)
+                return ('left_turn', -1, confidence, angle_deg)
 
         return ('straight', direction, confidence, angle_deg)

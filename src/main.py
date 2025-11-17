@@ -40,7 +40,8 @@ def main():
     video_path = os.path.join(save_dir, f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.avi")
 
     # Размер видео (можно подстроить под твою камеру)
-    frame_w, frame_h = 440, 240
+    #frame_w, frame_h = 440, 240
+    frame_w, frame_h = 320, 240
     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
     writer = cv2.VideoWriter(video_path, fourcc, 3.0, (frame_w, frame_h))
 
