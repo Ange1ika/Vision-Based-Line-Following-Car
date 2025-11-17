@@ -21,7 +21,7 @@ class VisionController:
 
     def __init__(self, camera, motors,
                  base_speed=50, turn_speed=25,
-                 maneuver_timeout=1.5,
+                 maneuver_timeout=2.5,
                  min_line_pixels=700,
                  telemetry_path="./telemetry/telemetry_log.csv",
                  use_yolo=True,
@@ -39,10 +39,17 @@ class VisionController:
         self.min_line_pixels = min_line_pixels
 
         # PID коэффициенты
-        self.Kp = 1.2
-        self.Ki = 0.0
-        self.Kd = 0.05
+        self.Kp = 0.35
+        self.Ki = 0.002
+        self.Kd = 0.12
         self.K_angle = 0.0
+        
+         # === Потеря линии / скелета (анти-дергание) ===
+        self.no_line_frames = 0
+        self.no_line_max = 3        # потеря линии только после 3 кадров подряд
+
+        self.no_skeleton_frames = 0
+        self.no_skeleton_max = 3     # аналогично для скелета
         
         self.prev_error = 0
         self.integral = 0
@@ -62,23 +69,23 @@ class VisionController:
             self.detector = LineDetector()
 
         # анализатор углов
-        self.angle = AngleAnalyzer(min_points=30, cooldown=0.5)
+        self.angle = AngleAnalyzer(min_points=30, cooldown=0.2)
 
         # === МАНЕВРЫ ===
         self.maneuver_active = False
         self.maneuver_dir = 0
         self.maneuver_start = 0.0
         self.maneuver_timeout = maneuver_timeout
-        self.maneuver_cooldown = 0.1  # секунды после маневра
+        self.maneuver_cooldown = 0.01  # секунды после маневра
         self.last_maneuver_time = 0.0
-        self.min_turn_confidence = 0.6
+        self.min_turn_confidence = 0.5
 
         # === История направления ===
         self.dir_history = []
-        self.dir_hist_size = 20
+        self.dir_hist_size = 10
 
         # === Константы для координат ===
-        self.BOTTOM_ROW_OFFSET = 1 
+        self.BOTTOM_ROW_OFFSET = 70 
 
         # телеметрия
         self.telemetry_path = telemetry_path
@@ -107,7 +114,7 @@ class VisionController:
         ys, xs = np.where(skeleton > 0)
         
         # Берём только нижнюю часть скелета
-        idx = ys > h * 0.4
+        idx = ys > h * 0.2
         xs = xs[idx]
         ys = ys[idx]
         
@@ -191,40 +198,34 @@ class VisionController:
         self.maneuver_dir = direction
         self.maneuver_start = time.time()
         # Проезжаем вперед
-        self.motors.move_forward(int(self.base_speed * 1.1), 0.15)
-
+        self.motors.move_forward(int(self.base_speed * 1.2), 0.24)
+    
     def _perform_maneuver(self, mask, skeleton, h, w):
-        """
-        Выполняем поворот НА МЕСТЕ, продолжая искать линию.
-        Возвращает True если маневр завершен, False если продолжается.
-        """
-        # Адаптивная скорость поворота (можно усилить для острых углов)
         turn_speed = self.turn_speed
-        
-        self.left_speed = turn_speed * self.maneuver_dir
-        self.right_speed = -turn_speed * self.maneuver_dir
+        dir_fixed = -self.maneuver_dir
+
+        self.left_speed  = turn_speed * dir_fixed
+        self.right_speed = -turn_speed * dir_fixed
         self.motors.set_speed(self.left_speed, self.right_speed)
 
-        # Проверяем: линия вернулась?
-        line_pixels = cv2.countNonZero(mask)
-        x_bottom, _ = self._calculate_x_bottom(skeleton, h, w)
+        x2, ang2 = self._calculate_x_bottom(skeleton, h, w)
+        if x2 is not None:
+            print("[MANEUVER] Angle normalized, exiting")
+            self.maneuver_active = False
+            self.last_maneuver_time = time.time()
+            self._reset_pid()
+            return True
         
-        if line_pixels > self.min_line_pixels and x_bottom is not None:
-            print(f"[MANEUVER] Line found, exiting maneuver")
-            self.maneuver_active = False
-            self.last_maneuver_time = time.time()
-            self._reset_pid()
-            return True  # Маневр завершен
-
-        # Таймаут
+        # === Таймаут — запасной вариант ===
         if (time.time() - self.maneuver_start) > self.maneuver_timeout:
-            print(f"[MANEUVER] Timeout, exiting maneuver")
+            print("[MANEUVER] Timeout, exiting maneuver")
             self.maneuver_active = False
             self.last_maneuver_time = time.time()
             self._reset_pid()
-            return True  # Маневр завершен по таймауту
+            return True
 
-        return False  # Маневр продолжается
+        return False
+
 
     def _is_cooldown_active(self):
         """Проверка активности cooldown"""
@@ -260,51 +261,46 @@ class VisionController:
             print("[MANEUVER] Continuing to PID with current frame")
 
         # === ЛИНИЯ ПОТЕРЯНА ===
+                # === ЛИНИЯ / ПИКСЕЛИ ===
         line_pixels = cv2.countNonZero(mask)
+
         if line_pixels < self.min_line_pixels:
-            # Получаем усреднённое направление
+            self.no_line_frames += 1
+        else:
+            self.no_line_frames = 0
+
+        if self.no_line_frames >= self.no_line_max:
             avg_dir = self._get_history_direction()
 
-            # Проверяем cooldown перед поворотом
-            if self._is_cooldown_active():
-                self.motors.stop()
-                mode = "NO_LINE_COOLDOWN"
-                self._print_action(mode)
-                self._log(mode, None)
-                if debug:
-                    return self._visualize(frame, mask, skeleton, None, mode, ("straight", 0, 0, 0))
-                return None
-
+            # ❗ SEARCH НЕ ДОЛЖЕН БЛОКИРОВАТЬСЯ cooldown-ом
+            # (cooldown только для манёвров, а не поиска)
+            
             if avg_dir > 0.2:
-                # линия была слева → ищем влево
-                self.left_speed = -self.turn_speed
-                self.right_speed = self.turn_speed
+                # Линия была слева → ищем влево
+                self.left_speed = -self.turn_speed * 0.9
+                self.right_speed = self.turn_speed * 0.9
                 self.motors.set_speed(self.left_speed, self.right_speed)
                 mode = "SEARCH_LEFT"
-                # Обновляем историю
-                self._update_dir_history(-1)
 
             elif avg_dir < -0.2:
-                # линия была справа → ищем вправо
-                self.left_speed = self.turn_speed
-                self.right_speed = -self.turn_speed
+                # Линия была справа → ищем вправо
+                self.left_speed = self.turn_speed * 0.9
+                self.right_speed = -self.turn_speed * 0.9
                 self.motors.set_speed(self.left_speed, self.right_speed)
                 mode = "SEARCH_RIGHT"
-                # Обновляем историю
-                self._update_dir_history(1)
 
             else:
-                # история нейтральна → остановка
-                self.motors.stop()
-                mode = "NO_LINE"
-                self._update_dir_history(0)
+                self.motors.set_speed(-self.turn_speed, self.turn_speed)
+                mode = "SEARCH_NEUTRAL"
 
             self._print_action(mode)
             self._log(mode, None)
-
             if debug:
-                return self._visualize(frame, mask, skeleton, None, mode, ("straight", 0, 0, 0))
+                return self._visualize(frame, mask, skeleton, None, mode, ("search", 0, 0, 0))
             return None
+
+        # если no_line_frames < no_line_max → просто продолжаем обычную логику:
+        # анализ углов, PID и т.д.
 
         # === АНАЛИЗ УГЛОВ ===
         corner_type, direction, conf, angle_deg = self.angle.analyze(skeleton)
@@ -333,11 +329,24 @@ class VisionController:
         x_bottom, line_angle = self._calculate_x_bottom(skeleton, h, w)
 
         if x_bottom is None:
-            # Недостаточно точек в скелете - переходим в поиск
+            self.no_skeleton_frames += 1
+        else:
+            self.no_skeleton_frames = 0
+
+        if x_bottom is None and self.no_skeleton_frames >= self.no_skeleton_max:
+            # Только если скелета нет уже несколько кадров подряд — стоп и поиск
             self.motors.stop()
             mode = "NO_SKELETON"
             self._log(mode, None)
             self._print_action(mode)
+            if debug:
+                return self._visualize(frame, mask, skeleton, None, mode, angle_info)
+            return None
+        elif x_bottom is None:
+            # короткий провал скелета — просто пропускаем кадр, не тормозим
+            mode = "NO_SKELETON_WAIT"
+            self._print_action(mode)
+            self._log(mode, None)
             if debug:
                 return self._visualize(frame, mask, skeleton, None, mode, angle_info)
             return None

@@ -50,8 +50,8 @@ class AngleAnalyzer:
         if 4 <= deviation <= 55 and self.can_trigger():
             self.last_time = time.time()
             if direction < 0:
-                return ('right_turn', +1, confidence, angle_deg)
+                return ('right_turn', -1, confidence, angle_deg)
             else:
-                return ('left_turn', -1, confidence, angle_deg)
+                return ('left_turn', +1, confidence, angle_deg)
 
         return ('straight', direction, confidence, angle_deg)
