@@ -1,3 +1,4 @@
+import os 
 import cv2
 import numpy as np
 import time
@@ -156,6 +157,7 @@ class OfflineAnalyzer:
 
 
 if __name__ == "__main__":
+    os.makedirs("./videos", exist_ok=True)
     analyzer = OfflineAnalyzer(
         video_path="./raw_videos/raw.avi",
         model_path="./checkpoints/yolov8n_seg_last/tflite_export/best_float32.tflite"
