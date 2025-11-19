@@ -18,6 +18,7 @@ class VisionController:
     - Correct turn directions (aligned with MotorController)
     - Search mode not blocked by cooldown
     - Minimal cooldown after maneuvers
+    - Full telemetry for transient analysis
     """
 
     def __init__(self, camera, motors,
@@ -43,16 +44,20 @@ class VisionController:
         self.Kp = 0.35
         self.Ki = 0.002
         self.Kd = 0.12
-        self.K_angle = 0.0
+        self.K_angle = 0.2
 
         # Line-loss counters
         self.no_line_frames = 0
         self.no_line_max = 4
 
+        # PID internal state
         self.prev_error = 0.0
         self.integral = 0.0
         self.integral_limit = 10.0
-        self.prev_time = time.time()
+        self.prev_time = time.time()      # для PID
+        self.prev_frame_time = time.time()  # для FPS
+        self.fps = 0.0
+        self.last_u = 0.0                 # последний управляющий сигнал (correction)
 
         # last valid values for fallback PID
         self.last_valid_x_bottom = None
@@ -75,14 +80,14 @@ class VisionController:
 
         # === MANEUVERS ===
         self.maneuver_active = False
-        self.maneuver_dir = 0
+        self.maneuver_dir = 0          # +1 left, -1 right
         self.maneuver_start = 0.0
         self.maneuver_timeout = maneuver_timeout
         self.maneuver_cooldown = 0.05
         self.last_maneuver_time = 0.0
         self.min_turn_confidence = 0.6
 
-        # direction history
+        # direction history (for search direction)
         self.dir_history = []
         self.dir_hist_size = 10
 
@@ -93,12 +98,23 @@ class VisionController:
         self.telemetry_path = telemetry_path
         os.makedirs(os.path.dirname(telemetry_path) or ".", exist_ok=True)
         with open(self.telemetry_path, "w", newline="") as f:
-            csv.writer(f).writerow(
-                ["time", "mode", "x_bottom", "left", "right", "error", "angle"]
-            )
+            writer = csv.writer(f)
+            writer.writerow([
+                "time",
+                "mode",
+                "x_bottom",
+                "x_valid",
+                "error",
+                "angle",
+                "left_speed",
+                "right_speed",
+                "u_control",
+                "fps",
+                "line_pixels"
+            ])
 
-        self.left_speed = 0
-        self.right_speed = 0
+        self.left_speed = 0.0
+        self.right_speed = 0.0
 
     # ---------------------------------------------------------
     def _update_dir_history(self, direction):
@@ -110,6 +126,18 @@ class VisionController:
         if not self.dir_history:
             return 0.0
         return sum(self.dir_history) / len(self.dir_history)
+
+    # ---------------------------------------------------------
+    def _quick_detect_x(self, mask, h, w):
+        """
+        Fast x detection in lower ROI (no fitLine).
+        Used in search mode to quickly re-acquire line.
+        """
+        roi = mask[int(h * 0.60):h, :]
+        ys, xs = np.where(roi > 0)
+        if len(xs) < 40:
+            return None
+        return float(np.mean(xs))
 
     # ---------------------------------------------------------
     def _calculate_x_bottom(self, mask, h, w):
@@ -139,16 +167,27 @@ class VisionController:
         return x_bottom, angle_deg
 
     # ---------------------------------------------------------
-    def _log(self, mode, x_bottom, error=0.0, angle=0.0):
+    def _log(self, mode, x_bottom, error=0.0, angle=0.0, line_pixels=0):
+        """
+        Full telemetry row:
+        time, mode, x_bottom, x_valid, error, angle,
+        left_speed, right_speed, u_control, fps, line_pixels
+        """
+        x_valid = self.last_valid_x_bottom
         with open(self.telemetry_path, "a", newline="") as f:
-            csv.writer(f).writerow([
+            writer = csv.writer(f)
+            writer.writerow([
                 time.strftime("%H:%M:%S"),
                 mode,
                 "" if x_bottom is None else f"{x_bottom:.1f}",
-                int(self.left_speed),
-                int(self.right_speed),
+                "" if x_valid is None else f"{x_valid:.1f}",
                 f"{error:.3f}",
                 f"{angle:.1f}",
+                int(self.left_speed),
+                int(self.right_speed),
+                f"{self.last_u:.3f}",
+                f"{self.fps:.2f}",
+                int(line_pixels)
             ])
 
     # ---------------------------------------------------------
@@ -169,10 +208,11 @@ class VisionController:
         self.prev_error = error
 
         correction = (
-                self.Kp * error +
-                self.Ki * self.integral +
-                self.Kd * derivative
+            self.Kp * error +
+            self.Ki * self.integral +
+            self.Kd * derivative
         )
+        self.last_u = float(correction)
 
         L = self.base_speed + correction * self.base_speed
         R = self.base_speed - correction * self.base_speed
@@ -187,12 +227,14 @@ class VisionController:
         self.motors.set_speed(int(L), int(R))
 
     def _reset_pid(self):
-        self.integral = 0
-        self.prev_error = 0
+        self.integral = 0.0
+        self.prev_error = 0.0
         self.prev_time = time.time()
+        self.last_u = 0.0
 
     # ================= MANEUVERS =============================
     def _start_maneuver(self, direction):
+        # direction: +1 (left), -1 (right)
         self.maneuver_active = True
         self.maneuver_dir = direction
         self.maneuver_start = time.time()
@@ -231,8 +273,20 @@ class VisionController:
         if frame is None:
             return None
 
+        # ===== FPS update =====
+        now_f = time.time()
+        dt_f = now_f - self.prev_frame_time
+        if dt_f > 0:
+            instant_fps = 1.0 / dt_f
+            # скользящее среднее FPS
+            self.fps = 0.9 * self.fps + 0.1 * instant_fps
+        self.prev_frame_time = now_f
+
         mask = self.detector.threshold(frame)
         h, w = mask.shape
+
+        # line pixel count for telemetry
+        line_pixels = cv2.countNonZero(mask)
 
         # ===== MANEUVER MODE =====
         if self.maneuver_active:
@@ -243,12 +297,11 @@ class VisionController:
             finished = self._perform_maneuver(mask, h, w)
 
             if not finished:
-                self._log(mode, x_bottom)
+                self._log(mode, x_bottom, error=0.0, angle=0.0, line_pixels=line_pixels)
                 return None if not debug else \
-                    self._visualize(frame, mask, x_bottom, mode, ("maneuver", self.maneuver_dir, 1.0, 0))
+                    self._visualize(frame, mask, x_bottom, mode, ("maneuver", self.maneuver_dir, 1.0, 0.0))
 
         # ===== LINE LOST =====
-        line_pixels = cv2.countNonZero(mask)
         if line_pixels < self.min_line_pixels:
             self.no_line_frames += 1
         else:
@@ -257,30 +310,46 @@ class VisionController:
         if self.no_line_frames >= self.no_line_max:
             avg_dir = self._get_history_direction()
 
-            # 🔥 search mode MUST NOT be blocked by cooldown
+            # --- fast re-acquire in bottom ROI ---
+            x_quick = self._quick_detect_x(mask, h, w)
+
+            if x_quick is not None:
+                # Found line during search → immediately go to PID
+                self.last_valid_x_bottom = x_quick
+                self.last_valid_angle = 0.0
+                mode = "SEARCH_FOUND"
+                self._pid_follow(x_quick, 0.0, w)
+                self._log(mode, x_quick, error=0.0, angle=0.0, line_pixels=line_pixels)
+                self._print_action(mode)
+                return None
+
+            # otherwise — spin to search
             if avg_dir > 0.1:
                 mode = "SEARCH_LEFT"
                 self.left_speed = -self.turn_speed
                 self.right_speed = self.turn_speed
                 self.motors.set_speed(int(self.left_speed), int(self.right_speed))
                 self._update_dir_history(-1)
+
             elif avg_dir < -0.1:
                 mode = "SEARCH_RIGHT"
                 self.left_speed = self.turn_speed
                 self.right_speed = -self.turn_speed
                 self.motors.set_speed(int(self.left_speed), int(self.right_speed))
                 self._update_dir_history(1)
+
             else:
+                # unknown previous side
                 mode = "NO_LINE"
-                self.left_speed = 0
-                self.right_speed = 0
                 self.motors.stop()
+                self.left_speed = 0.0
+                self.right_speed = 0.0
                 self._update_dir_history(0)
 
+            self._log(mode, None, error=0.0, angle=0.0, line_pixels=line_pixels)
             self._print_action(mode)
-            self._log(mode, None)
             return None if not debug else \
-                self._visualize(frame, mask, None, mode, ("straight", 0, 0, 0))
+                self._visualize(frame, mask, None, mode, ("straight", 0, 0.0, 0.0))
 
         # ===== ANGLE ANALYSIS =====
         corner_type, direction, conf, angle_deg = self.angle.analyze(mask)
@@ -291,7 +360,7 @@ class VisionController:
                 print(f"[ANGLE] {corner_type} conf={conf:.2f} → maneuver")
                 self._start_maneuver(direction)
                 mode = f"START_{corner_type.upper()}"
-                self._log(mode, None, 0, angle_deg)
+                self._log(mode, None, error=0.0, angle=angle_deg, line_pixels=line_pixels)
                 return None if not debug else \
                     self._visualize(frame, mask, None, mode, angle_info)
 
@@ -303,17 +372,19 @@ class VisionController:
             if self.last_valid_x_bottom is not None:
                 mode = "PID_FALLBACK"
                 self._pid_follow(self.last_valid_x_bottom, self.last_valid_angle, w)
-                self._log(mode, None)
+                self._log(mode, None, error=0.0, angle=self.last_valid_angle, line_pixels=line_pixels)
                 self._print_action(mode)
                 return None
             else:
                 mode = "NO_MASK_FORWARD"
+                self.left_speed = self.base_speed
+                self.right_speed = self.base_speed
                 self.motors.set_speed(self.base_speed, self.base_speed)
                 self._print_action(mode)
-                self._log(mode, None)
+                self._log(mode, None, error=0.0, angle=0.0, line_pixels=line_pixels)
                 return None
 
-        # save valid values
+        # valid measurement: save as last valid
         self.last_valid_x_bottom = x_bottom
         self.last_valid_angle = line_angle
 
@@ -325,7 +396,7 @@ class VisionController:
 
         mode = "PID"
         self._pid_follow(x_bottom, angle_deg, w)
-        self._log(mode, x_bottom, error, angle_deg)
+        self._log(mode, x_bottom, error=error, angle=angle_deg, line_pixels=line_pixels)
 
         return None if not debug else \
             self._visualize(frame, mask, x_bottom, mode, angle_info)
@@ -380,14 +451,19 @@ class VisionController:
         avg_dir = self._get_history_direction()
         hist_text = "L" if avg_dir > 0.2 else ("R" if avg_dir < -0.2 else "C")
 
+        x_valid = self.last_valid_x_bottom
+
         lines = [
             f"MODE: {mode}",
             f"ANGLE: {angle_deg:.1f}",
             f"TYPE: {corner_type}",
             f"CONF: {conf:.2f}",
-            f"TURN: {cooldown}",
             f"HIST: {hist_text} ({avg_dir:.2f})",
             f"L/R: {L} / {R}",
+            f"x: {'' if x_bottom is None else f'{x_bottom:.1f}'}  "
+            f"x_valid: {'' if x_valid is None else f'{x_valid:.1f}'}",
+            f"u: {self.last_u:.3f}",
+            f"FPS: {self.fps:.1f}"
         ]
 
         y0 = 22
