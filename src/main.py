@@ -27,7 +27,7 @@ def main():
     ctrl = VisionController(
         camera, motors,
         base_speed=30,          # Базовая скорость движения
-        turn_speed=45,          # Скорость поворота на месте
+        turn_speed=40,          # Скорость поворота на месте
         maneuver_timeout=3.0,   # Таймаут маневра
         min_line_pixels=700,
         use_yolo=True
@@ -42,7 +42,7 @@ def main():
     #frame_w, frame_h = 440, 240
     frame_w, frame_h = 320, 240
     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-    writer = cv2.VideoWriter(video_path, fourcc, 3.0, (frame_w, frame_h))
+    writer = cv2.VideoWriter(video_path, fourcc, 1.0, (frame_w, frame_h))
 
     if not writer.isOpened():
         print("❌ Ошибка: не удалось открыть VideoWriter. Проверь кодек или путь.")
