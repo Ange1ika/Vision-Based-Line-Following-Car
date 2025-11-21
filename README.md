@@ -1,11 +1,16 @@
 # Vision-Based Line-Following Car 🚗⚡
 
-<p align="center"> <gif src="demo/fast.gif" width="45%" controls></gif> <gif src="demo/precise.gif" width="45%" controls></gif> </p> <p align="center"><b>Left:</b> Fast mode<br> <b>Right:</b> Precise mode</p>
------------
-<p align="center"> <img src="demo/skel_1.jpg" width="30%" /> <img src="demo/skel_2.jpg" width="30%" /> <img src="demo/skel_3.jpg" width="30%" /> </p> <p align="center"><b>Skeletonized YOLOv8-seg mask samples</b></p>
+<p align="center">
+  <img src="demo/fast.gif" width="45%" />
+  <img src="demo/precise.gif" width="45%" />
+</p>
+
+<p align="center"><b>Left:</b> Fast mode<br><b>Right:</b> Precise mode</p>
 
 Real-time autonomous Raspberry Pi car using **YOLOv8 Segmentation (TFLite / OpenVINO)** and classical **OpenCV** vision.
 Supports smooth steering, angle detection for 90° turns, telemetry logging, and modular detector backend.
+
+<p align="center"> <img src="demo/skel_1.jpg" width="30%" /> <img src="demo/skel_2.jpg" width="30%" /> <img src="demo/skel_3.jpg" width="30%" /> </p> <p align="center"><b>Skeletonized YOLOv8-seg mask samples</b></p>
 
 ## 🌟 Key Features
 
