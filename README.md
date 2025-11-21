@@ -87,7 +87,7 @@ We support two YOLOv8-seg model formats:
 | ------------------ | -------------- | ------------ | ---------------------------------- |
 | **TFLite Float16** | **124.17 ms**  | **8.1 FPS**  | Slow postprocess, good portability |
 | **OpenVINO FP16**  | **46.14 ms**   | **21.7 FPS** | fastest than tflite, recommended   |
-| **OpenCV Momentums | **3.13 ms**   | **55.8 FPS (max 120)** | FASTEST, not robust       |
+| **OpenCV Momentums** | **3.13 ms**   | **55.8 FPS (max 120)** | FASTEST, not robust       |
 
 To convert pth to tflite, find a guide here: src/convertation/steps.md
 One script is used to convert openvino: src/convertation/openvino_convertation.py
