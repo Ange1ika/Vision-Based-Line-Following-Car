@@ -1,6 +1,6 @@
 # Vision-Based Line-Following Car 🚗⚡
 
-<p align="center"> <video src="demo/fast.gif" width="45%" controls></video> <video src="demo/precise.gif" width="45%" controls></video> </p> <p align="center"><b>Left:</b> Fast mode<br> <b>Right:</b> Precise mode</p>
+<p align="center"> <gif src="demo/fast.gif" width="45%" controls></gif> <gif src="demo/precise.gif" width="45%" controls></gif> </p> <p align="center"><b>Left:</b> Fast mode<br> <b>Right:</b> Precise mode</p>
 -----------
 <p align="center"> <img src="demo/skel_1.jpg" width="30%" /> <img src="demo/skel_2.jpg" width="30%" /> <img src="demo/skel_3.jpg" width="30%" /> </p> <p align="center"><b>Skeletonized YOLOv8-seg mask samples</b></p>
 
@@ -42,7 +42,7 @@ Supports two segmentation backends:
 * Debug display mode
 
 📊 Telemetry Dashboard (Summary)
-<p align="center"> <img src="telemetry_plots/summary_dashboard.png" width="80%" /> </p> <p align="center"> Full Telemetry</p>
+<p align="center"> <img src="telemetry_plots/summary_dashboard.png" width="100%" /> </p> <p align="center"> Full Telemetry</p>
 
 ---
 
