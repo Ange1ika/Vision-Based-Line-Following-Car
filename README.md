@@ -1,5 +1,7 @@
 # Vision-Based Line-Following Car 🚗⚡
 
+<p align="center"> <video src="demo/fast.gif" width="45%" controls></video> <video src="demo/precise.gif" width="45%" controls></video> </p> <p align="center"><b>Left:</b> Fast mode<br> <b>Right:</b> Precise mode</p>
+-----------
 <p align="center"> <img src="demo/skel_1.jpg" width="30%" /> <img src="demo/skel_2.jpg" width="30%" /> <img src="demo/skel_3.jpg" width="30%" /> </p> <p align="center"><b>Skeletonized YOLOv8-seg mask samples</b></p>
 
 Real-time autonomous Raspberry Pi car using **YOLOv8 Segmentation (TFLite / OpenVINO)** and classical **OpenCV** vision.
@@ -39,6 +41,9 @@ Supports two segmentation backends:
 * Optional overlay with line mask, centers, ROI grid
 * Debug display mode
 
+📊 Telemetry Dashboard (Summary)
+<p align="center"> <img src="telemetry_plots/summary_dashboard.png" width="80%" /> </p> <p align="center"> Full Telemetry</p>
+
 ---
 
 # 🗂 Project Structure
@@ -48,11 +53,9 @@ Vision-Based-Line-Following-Car/
 ├── checkpoints/                    # YOLO models (TFLite, ONNX, OpenVINO)
 ├── data/
 ├── demo/                           
-│   ├── openvino_result.jpg
-│   ├── tflite_result.jpg
-│   ├── driving_demo.gif
-│   └── mask_overlay_example.png
 ├── src/
+│   ├── fast_control                # independent_control script
+│   ├── precise_control             # independent_control script
 │   ├── YoloLineDetector.py         # YOLOv8-seg → mask → binary output
 │   ├── line_detector.py            # Classical OpenCV detector
 │   ├── angle_analyzer.py
