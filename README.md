@@ -86,33 +86,11 @@ We support two YOLOv8-seg model formats:
 | Backend            | Time per frame | FPS          | Notes                              |
 | ------------------ | -------------- | ------------ | ---------------------------------- |
 | **TFLite Float16** | **124.17 ms**  | **8.1 FPS**  | Slow postprocess, good portability |
-| **OpenVINO FP16**  | **46.14 ms**   | **21.7 FPS** | ⚡ FASTEST, recommended             |
+| **OpenVINO FP16**  | **46.14 ms**   | **21.7 FPS** | fastest than tflite, recommended   |
+| **OpenCV Momentums | **3.13 ms**   | **55.8 FPS (max 120)** | FASTEST, not robust       |
 
 To convert pth to tflite, find a guide here: src/convertation/steps.md
 One script is used to convert openvino: src/convertation/openvino_convertation.py
-
-### ✔ Why OpenVINO is faster?
-
-* Optimized linear algebra
-* Batch-friendly GEMM kernels
-* Fast sigmoid/mask reconstruction
-* Multithreading even on CPU
-* Efficient FP16 support
-
-**Conclusion: use OpenVINO for real robot driving**
-
----
-
-# 📸 Demo Results (demo/)
-
-
-```
-demo/
-├── openvino_result.jpg       # mask overlay from OpenVINO
-├── tflite_result.jpg         # mask overlay from TFLite
-├── driving_demo.gif          # optional driving animation
-└── mask_overlay_example.png
-```
 
 ---
 
@@ -131,7 +109,7 @@ demo/
 ### Use YOLOv8 Segmentation (default)
 
 ```bash
-python3 src/main.py
+python3 src/fast_control.py
 ```
 Change the opencv mode in the src/controller.py
 
